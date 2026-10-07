@@ -372,6 +372,7 @@ do
       { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
       { '<leader>t', group = '[T]oggle' },
       { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
+      { '<leader>g', group = '[G]it', mode = { 'n' } },
       { 'gr', group = 'LSP Actions', mode = { 'n' } },
     },
   }
@@ -682,6 +683,7 @@ do
       --
       -- This may be unwanted, since they displace some of your code
       if client and client:supports_method('textDocument/inlayHint', event.buf) then
+        vim.lsp.inlay_hint.enable(true, { bufnr = event.buf }) -- on by default (VSCode parity); toggle below
         map('<leader>th', function() vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled { bufnr = event.buf }) end, '[T]oggle Inlay [H]ints')
       end
     end,
@@ -701,7 +703,37 @@ do
     --    https://github.com/pmizio/typescript-tools.nvim
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    ts_ls = {
+      -- Inlay hints matching the VSCode typescript.inlayHints.* suite
+      settings = {
+        typescript = {
+          inlayHints = {
+            includeInlayParameterNameHints = 'all',
+            includeInlayParameterNameHintsWhenArgumentMatchesName = true,
+            includeInlayVariableType = true,
+            includeInlayPropertyDeclarationTypeHints = true,
+            includeInlayFunctionLikeReturnTypeHints = true,
+            includeInlayEnumMemberValueHints = true,
+          },
+        },
+        javascript = {
+          inlayHints = {
+            includeInlayParameterNameHints = 'all',
+            includeInlayParameterNameHintsWhenArgumentMatchesName = true,
+            includeInlayVariableType = true,
+            includeInlayPropertyDeclarationTypeHints = true,
+            includeInlayFunctionLikeReturnTypeHints = true,
+            includeInlayEnumMemberValueHints = true,
+          },
+        },
+      },
+    },
+    html = {},
+    cssls = {},
+    jsonls = {},
+    yamlls = {},
+    tailwindcss = {},
+    emmet_language_server = {},
 
     stylua = {}, -- Used to format Lua code
 
@@ -762,7 +794,11 @@ do
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
+    -- Formatters / linters used via conform.nvim and nvim-lint (LSP servers come from `servers` above)
+    'prettierd', -- Markdown, JSON, YAML, CSS, HTML formatting
+    'shfmt', -- Shell formatting
+    'eslint_d', -- ESLint daemon: linting + fix-on-save for JS/TS
+    'markdownlint-cli2', -- Markdown linting
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -783,28 +819,33 @@ do
   require('conform').setup {
     notify_on_error = false,
     format_on_save = function(bufnr)
-      -- You can specify filetypes to autoformat on save here:
-      local enabled_filetypes = {
-        -- lua = true,
-        -- python = true,
-      }
-      if enabled_filetypes[vim.bo[bufnr].filetype] then
-        return { timeout_ms = 500 }
-      else
-        return nil
-      end
+      -- Auto-format on save for every filetype with a formatter in `formatters_by_ft`
+      -- (JS/TS, json, yaml, html, css, markdown, sh…). Filetypes without one are skipped.
+      if require('conform').formatters_by_ft[vim.bo[bufnr].filetype] then return { timeout_ms = 1000 } end
+      return nil
     end,
     default_format_opts = {
       lsp_format = 'fallback', -- Use external formatters if configured below, otherwise use LSP formatting. Set to `false` to disable LSP formatting entirely.
     },
     -- You can also specify external formatters in here.
     formatters_by_ft = {
-      -- rust = { 'rustfmt' },
+      -- JS/TS: eslint --fix first, then prettier (mirrors VSCode codeActionsOnSave + formatOnSave)
+      javascript = { 'eslint_d', 'prettierd' },
+      javascriptreact = { 'eslint_d', 'prettierd' },
+      typescript = { 'eslint_d', 'prettierd' },
+      typescriptreact = { 'eslint_d', 'prettierd' },
+      json = { 'prettierd' },
+      jsonc = { 'prettierd' },
+      yaml = { 'prettierd' },
+      html = { 'prettierd' },
+      css = { 'prettierd' },
+      scss = { 'prettierd' },
+      less = { 'prettierd' },
+      markdown = { 'prettierd', 'prettier', stop_after_first = true },
+      sh = { 'shfmt' },
+      lua = { 'stylua' },
       -- Conform can also run multiple formatters sequentially
       -- python = { "isort", "black" },
-      --
-      -- You can use 'stop_after_first' to run the first available formatter from the list
-      -- javascript = { "prettierd", "prettier", stop_after_first = true },
     },
   }
 
@@ -827,8 +868,8 @@ do
   --    See the README about individual language/framework/plugin snippets:
   --    https://github.com/rafamadriz/friendly-snippets
   --
-  -- vim.pack.add { gh 'rafamadriz/friendly-snippets' }
-  -- require('luasnip.loaders.from_vscode').lazy_load()
+  vim.pack.add { gh 'rafamadriz/friendly-snippets' }
+  require('luasnip.loaders.from_vscode').lazy_load()
 
   -- [[ Autocomplete Engine ]]
   vim.pack.add { { src = gh 'saghen/blink.cmp', version = vim.version.range '1.*' } }
@@ -907,7 +948,10 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+  local parsers = {
+    'bash', 'c', 'css', 'diff', 'html', 'javascript', 'json', 'lua', 'luadoc', 'markdown',
+    'markdown_inline', 'query', 'tsx', 'typescript', 'vim', 'vimdoc', 'yaml',
+  }
   require('nvim-treesitter').install(parsers)
 
   ---@param buf integer
@@ -971,15 +1015,15 @@ do
   --
   -- require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
-  -- require 'kickstart.plugins.lint'
+  require 'kickstart.plugins.lint' -- markdownlint + eslint_d diagnostics
   -- require 'kickstart.plugins.autopairs'
-  -- require 'kickstart.plugins.neo-tree'
-  -- require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+  require 'kickstart.plugins.neo-tree'
+  require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- require 'custom.plugins'
+  require 'custom.plugins'
 end
 
 -- The line beneath this is called `modeline`. See `:help modeline`
