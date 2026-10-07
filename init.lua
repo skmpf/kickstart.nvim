@@ -841,7 +841,10 @@ do
       css = { 'prettierd' },
       scss = { 'prettierd' },
       less = { 'prettierd' },
-      markdown = { 'prettierd', 'prettier', stop_after_first = true },
+      markdown = { 'markdownlint-cli2', 'prettierd' },
+      -- ^ markdownlint-cli2 is pinned @0.17.2 (:MasonInstall markdownlint-cli2@0.17.2):
+      --   0.23.x regression — a discovered config makes CLI file args match nothing.
+      --   Rules config: ~/wiki/.markdownlint.jsonc (disables MD013/MD036/MD041).
       sh = { 'shfmt' },
       lua = { 'stylua' },
       -- Conform can also run multiple formatters sequentially
@@ -1016,6 +1019,18 @@ do
   -- require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
   require 'kickstart.plugins.lint' -- markdownlint + eslint_d diagnostics
+
+  -- nvim-lint runs markdownlint-cli2 in stdin mode ("-"), where the linter can't
+  -- do its file-relative config discovery. Switch it to file mode so a
+  -- .markdownlint.jsonc found upward from each file is honored (the same config
+  -- conform's markdownlint --fix pass uses).
+  local mlc2 = require('lint').linters['markdownlint-cli2']
+  mlc2.stdin = false
+  mlc2.args = {}
+  mlc2.parser = require('lint.parser').from_errorformat('%f:%l:%c %m,%f:%l %m', {
+    source = 'markdownlint',
+    severity = vim.diagnostic.severity.WARN,
+  })
   -- require 'kickstart.plugins.autopairs'
   require 'kickstart.plugins.neo-tree'
   require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
